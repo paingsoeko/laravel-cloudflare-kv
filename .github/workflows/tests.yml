@@ -67,7 +67,10 @@ jobs:
           composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
 
       - name: Installed versions
-        run: composer show laravel/framework orchestra/testbench guzzlehttp/guzzle phpunit/phpunit | grep -E '^(name|versions)'
+        run: |
+          for package in laravel/framework orchestra/testbench guzzlehttp/guzzle phpunit/phpunit; do
+            composer show "$package" | grep -E '^(name|versions) +:'
+          done
 
       - name: Run tests
         run: vendor/bin/phpunit --testsuite=Unit,Feature
