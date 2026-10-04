@@ -1,0 +1,69 @@
+{
+    "name": "kopaing/laravel-cloudflare-kv",
+    "description": "A Laravel cache store backed by Cloudflare Workers KV, with honest semantics for TTLs, atomicity and consistency.",
+    "keywords": [
+        "laravel",
+        "cache",
+        "cloudflare",
+        "workers-kv",
+        "kv",
+        "cache-driver"
+    ],
+    "homepage": "https://github.com/kopaing/laravel-cloudflare-kv",
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "kopaing",
+            "homepage": "https://github.com/kopaing"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/kopaing/laravel-cloudflare-kv/issues",
+        "source": "https://github.com/kopaing/laravel-cloudflare-kv"
+    },
+    "require": {
+        "php": "^8.3",
+        "ext-json": "*",
+        "guzzlehttp/guzzle": "^7.8.2 || ^8.0",
+        "illuminate/cache": "^11.33.2 || ^12.0.1 || ^13.0",
+        "illuminate/contracts": "^11.33.2 || ^12.0.1 || ^13.0",
+        "illuminate/http": "^11.33.2 || ^12.0.1 || ^13.0",
+        "illuminate/support": "^11.33.2 || ^12.0.1 || ^13.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "larastan/larastan": "^3.0",
+        "orchestra/testbench": "^9.0 || ^10.0 || ^11.0",
+        "phpunit/phpunit": "^11.5.50 || ^12.5.8"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kopaing\\CloudflareKV\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Kopaing\\CloudflareKV\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit --testsuite=Unit,Feature",
+        "test:integration": "phpunit --testsuite=Integration",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "format": "php-cs-fixer fix",
+        "format:check": "php-cs-fixer fix --dry-run --diff"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Kopaing\\CloudflareKV\\CloudflareKVServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

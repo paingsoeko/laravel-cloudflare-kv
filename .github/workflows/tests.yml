@@ -1,0 +1,129 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    # Weekly, to catch breaking releases of Laravel or Testbench early.
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+        laravel: ['11.*', '12.*', '13.*']
+        stability: [prefer-lowest, prefer-stable]
+        include:
+          - laravel: '11.*'
+            testbench: '^9.0'
+          - laravel: '12.*'
+            testbench: '^10.0'
+          - laravel: '13.*'
+            testbench: '^11.0'
+        exclude:
+          # Laravel 11 reached end of security support in March 2026.
+          - laravel: '11.*'
+            php: '8.5'
+          # Lowest dependencies are tested on the lowest supported PHP only.
+          - stability: prefer-lowest
+            php: '8.4'
+          - stability: prefer-lowest
+            php: '8.5'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json, mbstring, openssl, sodium
+          coverage: none
+
+      # Every laravel/framework 11.x release is flagged by a Packagist security advisory,
+      # which recent Composer versions refuse to install. CI still verifies compatibility.
+      - name: Allow Laravel 11 in CI
+        if: matrix.laravel == '11.*'
+        run: composer config policy.advisories.ignore --json '["laravel/framework"]'
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+
+      - name: Installed versions
+        run: composer show laravel/framework orchestra/testbench guzzlehttp/guzzle phpunit/phpunit | grep -E '^(name|versions)'
+
+      - name: Run tests
+        run: vendor/bin/phpunit --testsuite=Unit,Feature
+
+  quality:
+    name: Static analysis and code style
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-lock
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: PHPStan (Larastan, level max)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+      - name: PHP CS Fixer
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: '1'
+
+  integration:
+    name: Live Cloudflare KV
+    # Opt-in: set the repository variable CLOUDFLARE_KV_INTEGRATION=true and the three
+    # secrets below. Never runs for pull requests from forks.
+    if: vars.CLOUDFLARE_KV_INTEGRATION == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: cloudflare-kv-integration
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run integration tests
+        run: vendor/bin/phpunit --testsuite=Integration
+        env:
+          CLOUDFLARE_KV_INTEGRATION: 'true'
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
