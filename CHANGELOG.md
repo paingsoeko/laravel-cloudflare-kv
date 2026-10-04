@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-04
+
 ### Fixed
 
 - Cached Eloquent models and collections came back as `__PHP_Incomplete_Class` on Laravel 13, whose
@@ -45,4 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit, feature (HTTP-faked) and opt-in live integration test suites; GitHub Actions CI matrix and
   tag-driven release workflow.
 
-[Unreleased]: https://github.com/kopaing/laravel-cloudflare-kv/commits/main
+[Unreleased]: https://github.com/paingsoeko/laravel-cloudflare-kv/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/paingsoeko/laravel-cloudflare-kv/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/paingsoeko/laravel-cloudflare-kv/releases/tag/v1.0.0
