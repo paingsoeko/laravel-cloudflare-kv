@@ -112,7 +112,7 @@ The first value that isn't `null` wins:
 
 1. The store entry in `config/cache.php` (`stores.<name>.<option>`)
 2. The package defaults in `config/cloudflare-kv.php`
-3. Laravel defaults: `cache.prefix` (prefix), `cache.serializable_classes`, and `app.key` (signing key)
+3. Laravel defaults: `cache.prefix` (prefix) and `app.key` (signing key)
 
 `retry` and `flush` are merged one level deep, so `'retry' => ['times' => 5]` on a store keeps the default `sleep`. Several stores can share credentials and use different prefixes or namespaces.
 
@@ -130,7 +130,7 @@ The configuration contains no closures, so `php artisan config:cache` is support
 | `retry.sleep` / `retry.max_sleep` | `200` / `2000` | Backoff base and cap, in ms. |
 | `serializer` | `php` | `php` (any serializable value, HMAC-signed) or `json` (scalars and arrays only). |
 | `signing_key` | `APP_KEY` | Secret used to sign payloads. |
-| `serializable_classes` | `cache.serializable_classes` → `true` | Classes `unserialize()` may create. |
+| `serializable_classes` | `true` | Classes `unserialize()` may create (`true`, `false` or a list). Not inherited from `cache.serializable_classes`; see below. |
 | `encrypt` | `false` | Encrypt values with Laravel's encrypter before they leave the app. |
 | `allow_non_atomic_updates` | `false` | Enables `increment`, `decrement` and `touch` as **non-atomic** read-modify-write. |
 | `forever_ttl` | `null` | If set (≥ 60), `forever()` entries expire after this many seconds. |
@@ -167,7 +167,7 @@ Cache::store('cloudflare')->put('tracking:ORDER-1001', [
 
 With `CACHE_STORE=cloudflare` you can call `Cache::get()` and the rest without `store()`.
 
-> **Caching Eloquent models on Laravel 13.** New Laravel 13 apps ship with `'serializable_classes' => false` in `config/cache.php`. This driver follows that setting the same way Laravel's Redis and file stores do, so objects come back as `__PHP_Incomplete_Class`. Either cache arrays (`->toArray()`), or list the classes you cache in `cache.serializable_classes` (or in this store's `serializable_classes`).
+> **Eloquent models and collections work out of the box, including on Laravel 13.** New Laravel 13 apps set `'serializable_classes' => false` in `config/cache.php`. Laravel's own stores then return objects as `__PHP_Incomplete_Class`, because anyone who can write to Redis or the database could plant a malicious serialized object. This driver deliberately does **not** inherit that setting. It only unserializes payloads carrying a valid HMAC signature made with your `APP_KEY` (or `signing_key`), so values planted by anyone else are rejected before `unserialize()` runs. To restrict classes anyway, set this store's `serializable_classes` to a list of classes or to `false`.
 
 ### Locks
 
@@ -222,7 +222,7 @@ Prefixes nested inside each other (`app:` and `app:v2:`) **will** be flushed tog
 
 ## Consistency and performance limitations
 
-- **Eventual consistency.** A write can take up to 60 s or more to be visible in other locations. A read right after a write from another region may return the old value or nothing.
+- **Eventual consistency.** A write or delete can take up to 60 s or more to be visible in other locations, and even the same server can briefly read the old value. In live testing, `get()` straight after `forget()` still returned the deleted value. Don't rely on read-your-own-write or read-your-own-delete.
 - **Write rate.** Cloudflare allows about one write per second to the same key. Faster writes get `429` responses, which are retried with backoff.
 - **API rate limit.** The Cloudflare REST API allows 1,200 requests per 5 minutes per user. Once exceeded, calls are blocked for about 5 minutes. Use `many`/`putMany` and don't put KV on hot paths that write on every request.
 - **Latency.** Each cache call is an HTTPS request to the Cloudflare API, not a local socket. Expect tens of milliseconds, not microseconds. KV is a good fit for data that is read often and written rarely.
@@ -271,7 +271,7 @@ Laravel's own `CacheHit`, `CacheMissed` and `KeyWritten` events are also dispatc
 
 - **Least privilege:** a token with only *Workers KV Storage: Edit* on one account, ideally with an IP filter and an expiry date.
 - **No secrets in logs:** exception messages and events never contain the API token or cached values. The token is also hidden from `dump()` output and stack-trace arguments, and the HTTP client's exceptions (which hold the request headers) are not chained.
-- **Safe deserialization:** values are stored in a versioned JSON envelope signed with HMAC-SHA256. The signing key is derived from `APP_KEY` or `signing_key`, and the signature covers the storage key and expiry. `unserialize()` only runs on payloads whose signature checks out, and it respects `serializable_classes`. Anyone who can write to the namespace without your key, such as another app, a Worker, or a dashboard user, can't make your app create PHP objects. Their values are just cache misses.
+- **Safe deserialization:** values are stored in a versioned JSON envelope signed with HMAC-SHA256. The signing key is derived from `APP_KEY` or `signing_key`, and the signature covers the storage key and expiry. `unserialize()` only runs on payloads whose signature checks out. Anyone who can write to the namespace without your key, such as another app, a Worker, or a dashboard user, can't make your app create PHP objects. Their values are just cache misses. That's why every class is allowed by default. If your `APP_KEY` leaks, rotate it; that also invalidates every cached entry. For defence in depth, restrict `serializable_classes` to the classes you actually cache.
 - **The `json` serializer** never instantiates objects at all. Use it if you only cache arrays and scalars.
 - **Encryption:** KV values are readable by anyone with dashboard or API access to the account. If you cache personal or sensitive data, set `encrypt => true` (AES via Laravel's encrypter), or don't cache that data in KV.
 - **Key rotation:** changing `APP_KEY` or `signing_key` turns existing entries into misses. They aren't decrypted with the wrong key; they expire or are flushed normally.
@@ -305,7 +305,7 @@ composer test:integration
 | `HTTP 401 [10000] Authentication error` | Wrong or expired token. |
 | `HTTP 403` | The token lacks *Workers KV Storage* on that account. |
 | Every read is a miss | Wrong `namespace_id`, a rotated `APP_KEY`, or `encrypt` was switched off. Listen for `CloudflareKVPayloadRejected`. |
-| Cached models come back as `__PHP_Incomplete_Class` | `cache.serializable_classes` is `false` (the Laravel 13 default). |
+| Cached models come back as `__PHP_Incomplete_Class` | The store's `serializable_classes` (or `cloudflare-kv.serializable_classes`) is `false` or doesn't list that class. `cache.serializable_classes` has no effect on this store. |
 | Value changed but old value still returned | Eventual consistency; wait up to ~60 s. |
 | `CloudflareKVRateLimitException` | More than 1,200 API calls per 5 minutes, or more than 1 write per second to one key. |
 | `increment()` throws | Expected; see [Supported APIs](#supported-and-unsupported-cache-apis). |

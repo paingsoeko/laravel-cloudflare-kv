@@ -96,14 +96,27 @@ final class ServiceProviderTest extends TestCase
     }
 
     #[Test]
-    public function the_signing_key_and_serializable_classes_fall_back_to_laravel(): void
+    public function the_signing_key_falls_back_to_the_app_key(): void
     {
-        $this->app['config']->set('cache.serializable_classes', false);
-
         $resolved = $this->app->make(CloudflareKVManager::class)->resolveConfig(['driver' => 'cloudflare']);
 
         $this->assertSame($this->app['config']->get('app.key'), $resolved['signing_key']);
-        $this->assertFalse($resolved['serializable_classes']);
+    }
+
+    #[Test]
+    public function serializable_classes_are_not_inherited_from_laravels_cache_config(): void
+    {
+        $this->app['config']->set('cache.serializable_classes', false);
+        $manager = $this->app->make(CloudflareKVManager::class);
+
+        $this->assertTrue($manager->resolveConfig(['driver' => 'cloudflare'])['serializable_classes']);
+        $this->assertSame(
+            [Repository::class],
+            $manager->resolveConfig(['driver' => 'cloudflare', 'serializable_classes' => [Repository::class]])['serializable_classes'],
+        );
+
+        $this->app['config']->set('cloudflare-kv.serializable_classes', false);
+        $this->assertFalse($manager->resolveConfig(['driver' => 'cloudflare'])['serializable_classes']);
     }
 
     #[Test]

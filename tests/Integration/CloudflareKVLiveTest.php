@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Kopaing\CloudflareKV\Tests\Integration;
 
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Kopaing\CloudflareKV\Exceptions\CloudflareKVAuthenticationException;
+use Kopaing\CloudflareKV\Tests\Fixtures\Product;
 use Kopaing\CloudflareKV\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 use Throwable;
@@ -41,6 +44,9 @@ final class CloudflareKVLiveTest extends TestCase
         $this->prefix = 'it-'.Str::lower(Str::random(12)).':';
 
         parent::setUp();
+
+        // Real backoff against the real API.
+        Sleep::fake(false);
     }
 
     protected function tearDown(): void
@@ -70,6 +76,24 @@ final class CloudflareKVLiveTest extends TestCase
         ]);
     }
 
+    /**
+     * Poll until the condition holds, allowing for KV's ~60 second propagation window.
+     */
+    private function assertEventually(callable $condition, int $timeoutSeconds = 75): void
+    {
+        $deadline = time() + $timeoutSeconds;
+
+        while (! $condition()) {
+            if (time() >= $deadline) {
+                $this->fail("Condition not met within {$timeoutSeconds} seconds.");
+            }
+
+            sleep(5);
+        }
+
+        $this->addToAssertionCount(1);
+    }
+
     private function cache(): Repository
     {
         return Cache::store('cloudflare');
@@ -87,8 +111,25 @@ final class CloudflareKVLiveTest extends TestCase
         $this->assertSame(42, $cache->get('forever'));
         $this->assertSame(43, $cache->increment('forever'));
 
+        // Deletes are eventually consistent: even the same client can read the old
+        // value for up to ~60 seconds after forget().
         $this->assertTrue($cache->forget('user:1'));
-        $this->assertNull($cache->get('user:1'));
+        $this->assertEventually(fn (): bool => $cache->get('user:1') === null);
+    }
+
+    #[Test]
+    public function eloquent_collections_round_trip_with_laravel_13_defaults(): void
+    {
+        $this->app['config']->set('cache.serializable_classes', false);
+
+        $products = new EloquentCollection([new Product(['id' => 1, 'name' => 'Lamp'])]);
+        $this->cache()->put('products', $products, 120);
+
+        $fromKv = $this->cache()->get('products');
+
+        $this->assertInstanceOf(EloquentCollection::class, $fromKv);
+        $this->assertInstanceOf(Product::class, $fromKv->first());
+        $this->assertSame('Lamp', $fromKv->first()->name);
     }
 
     #[Test]

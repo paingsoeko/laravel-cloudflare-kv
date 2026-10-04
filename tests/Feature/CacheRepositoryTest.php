@@ -10,6 +10,7 @@ use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -21,6 +22,7 @@ use Kopaing\CloudflareKV\Exceptions\CloudflareKVUnsupportedOperationException;
 use Kopaing\CloudflareKV\Support\KeyFormatter;
 use Kopaing\CloudflareKV\Support\ValueSerializer;
 use Kopaing\CloudflareKV\Tests\Fakes\FakeCloudflareKVApi;
+use Kopaing\CloudflareKV\Tests\Fixtures\Product;
 use Kopaing\CloudflareKV\Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -76,6 +78,27 @@ final class CacheRepositoryTest extends TestCase
         Cache::store('cloudflare')->put('obj', new ArrayObject(['a' => 1]), 600);
 
         $this->assertEquals(new ArrayObject(['a' => 1]), Cache::store('cloudflare')->get('obj'));
+    }
+
+    #[Test]
+    public function eloquent_collections_round_trip_with_laravel_13s_default_serializable_classes(): void
+    {
+        // New Laravel 13 apps ship with 'serializable_classes' => false in config/cache.php.
+        $this->app['config']->set('cache.serializable_classes', false);
+        $this->app->make('cache')->forgetDriver('cloudflare');
+
+        $products = new EloquentCollection([
+            new Product(['id' => 1, 'name' => 'Lamp']),
+            new Product(['id' => 2, 'name' => 'Desk']),
+        ]);
+
+        $cached = Cache::store('cloudflare')->remember('products:featured', 3600, fn () => $products);
+        $fromKv = Cache::store('cloudflare')->get('products:featured');
+
+        $this->assertInstanceOf(EloquentCollection::class, $fromKv);
+        $this->assertInstanceOf(Product::class, $fromKv->first());
+        $this->assertSame(['Lamp', 'Desk'], $fromKv->pluck('name')->all());
+        $this->assertEquals($cached, $fromKv);
     }
 
     #[Test]

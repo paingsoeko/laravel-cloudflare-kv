@@ -25,8 +25,13 @@ use Kopaing\CloudflareKV\Support\ValueSerializer;
  *
  *  1. The store's own entry in config/cache.php ("stores.<name>").
  *  2. The package defaults in config/cloudflare-kv.php (publishable, env-driven).
- *  3. Laravel's cache-wide settings: "cache.prefix" for the prefix and
- *     "cache.serializable_classes" for allowed classes; "app.key" for the signing key.
+ *  3. Laravel's settings: "cache.prefix" for the prefix and "app.key" for the signing key.
+ *
+ * "serializable_classes" deliberately does NOT fall back to Laravel's
+ * "cache.serializable_classes" (false in new Laravel 13 apps). That setting protects stores
+ * whose contents could be written by an attacker; this store only unserializes payloads
+ * whose HMAC signature (keyed by APP_KEY / "signing_key") verifies, so it defaults to
+ * restoring any class, like Laravel's Redis store did before Laravel 13.
  *
  * "retry" and "flush" are merged one level deep, so a store can override a single sub-key.
  */
@@ -142,7 +147,7 @@ final class CloudflareKVManager
 
         $resolved['prefix'] ??= $this->config()->get('cache.prefix', '');
         $resolved['signing_key'] ??= $this->config()->get('app.key');
-        $resolved['serializable_classes'] ??= $this->config()->get('cache.serializable_classes') ?? true;
+        $resolved['serializable_classes'] ??= true;
 
         return $resolved;
     }

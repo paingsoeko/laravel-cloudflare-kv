@@ -14,7 +14,7 @@ declare(strict_types=1);
 |
 |   1. config/cache.php  -> stores.<name>.<option>
 |   2. this file         -> cloudflare-kv.<option>
-|   3. Laravel           -> cache.prefix, cache.serializable_classes, app.key
+|   3. Laravel           -> cache.prefix, app.key
 |
 | The minimal store definition is therefore:
 |
@@ -60,7 +60,9 @@ return [
     'signing_key' => env('CLOUDFLARE_KV_SIGNING_KEY'),
 
     // Classes unserialize() may instantiate (true, false or a list of class names).
-    // Null falls back to cache.serializable_classes, then true.
+    // Null means true. Laravel's cache.serializable_classes (false in new Laravel 13
+    // apps) is intentionally not inherited: only payloads signed with your key are
+    // ever unserialized, so Eloquent models and collections round-trip by default.
     'serializable_classes' => null,
 
     // Encrypt values with Laravel's Encrypter (APP_KEY) before they leave the app.

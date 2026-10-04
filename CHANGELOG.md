@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Cached Eloquent models and collections came back as `__PHP_Incomplete_Class` on Laravel 13, whose
+  new apps set `cache.serializable_classes` to `false`. The store no longer inherits that setting:
+  payloads are only unserialized after HMAC verification with the app key, so `serializable_classes`
+  now defaults to `true`. Set the store's own `serializable_classes` to restrict it.
+
+### Changed
+
+- Documented that deletes are eventually consistent even for the same client: `get()` right after
+  `forget()` can still return the old value for up to ~60 seconds (observed against the live API).
+
 ## [1.0.0] - 2026-10-04
 
 ### Added
